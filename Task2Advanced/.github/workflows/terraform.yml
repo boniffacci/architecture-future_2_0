@@ -1,0 +1,199 @@
+name: 'Terraform CI/CD'
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'envs/**'
+      - 'modules/**'
+      - '.github/workflows/terraform.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'envs/**'
+      - 'modules/**'
+      
+  # Ручной запуск для apply/destroy
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Окружение для развёртывания'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - stage
+          - prod
+      action:
+        description: 'Действие Terraform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      auto_approve:
+        description: 'Автоматически подтвердить apply/destroy'
+        required: false
+        default: false
+        type: boolean
+
+# Переменные окружения для всего workflow
+env:
+  TF_VERSION: '1.6.0'
+  TF_CLI_ARGS: '-no-color'
+  
+# Защита от одновременного выполнения для одного окружения
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.environment || 'unknown' }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    name: 'Terraform ${{ inputs.action || 'plan' }} - ${{ inputs.environment || 'dev' }}'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    
+    # Защита production окружения
+    if: |
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment != 'prod') ||
+      (github.event_name == 'push' && github.ref != 'refs/heads/main' && inputs.environment != 'prod') ||
+      (github.event_name == 'pull_request')
+    
+    steps:
+      # 1. Checkout кода
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      # 2. Установка Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          
+      # 3. Конфигурация AWS CLI для S3 (совместимо с Yandex Object Storage)
+      - name: Configure AWS CLI for S3-compatible storage
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.S3_ACCESS_KEY }}
+          aws configure set aws_secret_access_key ${{ secrets.S3_SECRET_KEY }}
+          aws configure set default.region ru-central1
+          aws configure set default.output json
+          
+      # 4. Создание бакета для состояния (если не существует)
+      - name: Create S3 bucket for Terraform state if not exists
+        run: |
+          cd scripts
+          chmod +x setup-backend.sh
+          ./setup-backend.sh
+        env:
+          S3_ENDPOINT: "https://storage.yandexcloud.net"
+          S3_BUCKET: "terraform-state-${{ github.repository_owner }}"
+          S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+          S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
+          
+      # 5. Инициализация Terraform
+      - name: Terraform Init
+        id: init
+        run: |
+          cd envs/${{ github.event.inputs.environment || 'dev' }}
+          
+          # Генерация файла переменных из секретов
+          cat > terraform.auto.tfvars <<EOF
+          cloud_id = "${{ secrets.CLOUD_ID }}"
+          folder_id = "${{ secrets.FOLDER_ID }}"
+          subnet_id = "${{ secrets.SUBNET_ID }}"
+          ssh_key = "${{ secrets.SSH_KEY }}"
+          s3_access_key = "${{ secrets.S3_ACCESS_KEY }}"
+          s3_secret_key = "${{ secrets.S3_SECRET_KEY }}"
+          EOF
+          
+          # Инициализация с backend
+          terraform init \
+            -backend-config="bucket=terraform-state-${{ github.repository_owner }}" \
+            -backend-config="key=${{ github.event.inputs.environment || 'dev' }}/terraform.tfstate" \
+            -backend-config="access_key=${{ secrets.S3_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.S3_SECRET_KEY }}" \
+            -reconfigure
+          
+      # 6. Валидация конфигурации
+      - name: Terraform Validate
+        run: |
+          cd envs/${{ github.event.inputs.environment || 'dev' }}
+          terraform validate
+          
+      # 7. Форматирование кода (только для PR)
+      - name: Terraform Format
+        if: github.event_name == 'pull_request'
+        run: |
+          cd envs/${{ github.event.inputs.environment || 'dev' }}
+          terraform fmt -check -recursive
+          
+      # 8. Планирование изменений
+      - name: Terraform Plan
+        id: plan
+        run: |
+          cd envs/${{ github.event.inputs.environment || 'dev' }}
+          
+          # Для PR сохраняем план в артефакт
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            terraform plan -out=tfplan -input=false
+            terraform show -json tfplan > tfplan.json
+          else
+            terraform plan -input=false
+          fi
+          
+      # 9. Загрузка плана как артефакт (для PR)
+      - name: Upload Plan Artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.event.inputs.environment || 'dev' }}
+          path: |
+            envs/${{ github.event.inputs.environment || 'dev' }}/tfplan
+            envs/${{ github.event.inputs.environment || 'dev' }}/tfplan.json
+          
+      # 10. Применение изменений (только с подтверждением)
+      - name: Terraform Apply
+        if: |
+          (github.event_name == 'workflow_dispatch' && inputs.action == 'apply') ||
+          (github.event.inputs.auto_approve == true)
+        run: |
+          cd envs/${{ github.event.inputs.environment || 'dev' }}
+          
+          # Для workflow_dispatch используем auto-approve если указано
+          if [[ "${{ github.event.inputs.auto_approve }}" == "true" ]]; then
+            terraform apply -auto-approve
+          else
+            terraform apply
+          fi
+          
+      # 11. Уничтожение инфраструктуры (только с подтверждением)
+      - name: Terraform Destroy
+        if: |
+          github.event_name == 'workflow_dispatch' &&
+          inputs.action == 'destroy' &&
+          inputs.environment != 'prod'  # Защита от случайного удаления прода
+        run: |
+          cd envs/${{ github.event.inputs.environment || 'dev' }}
+          
+          if [[ "${{ github.event.inputs.auto_approve }}" == "true" ]]; then
+            terraform destroy -auto-approve
+          else
+            terraform destroy
+          fi
+          
+      # 12. Экспорт outputs (после apply)
+      - name: Export Terraform Outputs
+        if: success() && github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+        run: |
+          cd envs/${{ github.event.inputs.environment || 'dev' }}
+          terraform output -json > outputs.json

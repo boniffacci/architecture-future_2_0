@@ -1,0 +1,117 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title C4 Container Diagram - Целевая архитектура "Будущее 2.0"
+
+' ==== Домены и системы ====
+Person_Ext(analyst, "Бизнес-аналитик", "Пользователь портала самообслуживания")
+Person_Ext(doctor, "Врач", "Использует медицинскую систему")
+Person_Ext(fintech_operator, "Финтех-оператор", "Работает с банковской системой")
+Person_Ext(manager, "Руководитель", "Просмотр отчетов")
+
+' Внешние системы
+System_Ext(regulator, "Регулятор", "Внешняя система регуляторов")
+System_Ext(partner, "Партнер", "Фармацевтические компании")
+System_Ext(payment_system, "Платежная система", "Внешние платежные системы")
+
+' ==== Система портала самообслуживания ====
+System_Boundary(portal_boundary, "Портал самообслуживания") {
+    Container(portal_ui, "Web UI", "React/TypeScript", "Интерфейс портала")
+    Container(portal_api, "API Gateway", "Node.js", "Единая точка входа API")
+    Container(report_service, "Report Service", "Java", "Генерация отчетов")
+    Container(query_engine, "Query Engine", "Java", "Обработка аналитических запросов")
+    Container(data_catalog, "Data Catalog", "Apache Atlas", "Каталог метаданных")
+}
+
+' ==== Домен Медицинские услуги ====
+System_Boundary(medical_boundary, "Домен: Медицинские услуги") {
+    Container(patient_service, "Patient Service", "Java", "Управление пациентами")
+    Container(appointment_service, "Appointment Service", "Java", "Записи на прием")
+    Container(medical_db, "Medical Database", "PostgreSQL", "Медицинские данные")
+}
+
+' ==== Домен Финтех-услуги ====
+System_Boundary(fintech_boundary, "Домен: Финтех-услуги") {
+    Container(account_service, "Account Service", "Go", "Управление счетами")
+    Container(transaction_service, "Transaction Service", "Go", "Транзакции")
+    Container(loan_service, "Loan Service", "Java", "Кредитование")
+    Container(fintech_db, "Fintech Database", "CockroachDB", "Финансовые данные")
+}
+
+' ==== Домен ИИ-сервисы ====
+System_Boundary(ai_boundary, "Домен: ИИ-сервисы") {
+    Container(ai_processing, "AI Processing", "Python", "Обработка медицинских данных")
+    Container(prediction_service, "Prediction Service", "Python", "Прогнозная аналитика")
+    Container(model_registry, "Model Registry", "MLflow", "Хранилище ML-моделей")
+}
+
+' ==== Платформенные сервисы ====
+System_Boundary(platform_boundary, "Платформенные сервисы") {
+    Container(event_bus, "Event Bus", "Apache Kafka", "Событийная шина")
+    Container(data_lake, "Data Lake", "S3/Iceberg", "Хранилище сырых данных")
+    Container(stream_processor, "Stream Processor", "Apache Flink", "Потоковая обработка")
+    Container(airflow, "Orchestration", "Apache Airflow", "Оркестрация пайплайнов")
+}
+
+' ==== Аналитические витрины ====
+System_Boundary(analytics_boundary, "Аналитические витрины") {
+    Container(clickhouse, "Analytical DB", "ClickHouse", "Основная аналитическая БД")
+    Container(druid, "Time Series DB", "Apache Druid", "Временные ряды")
+    Container(redis, "Cache", "Redis", "Кэширование запросов")
+}
+
+' ==== Антикоррупционные слои ====
+System_Boundary(legacy_boundary, "Антикоррупционные слои") {
+    Container(dwh_adapter, "DWH Adapter", "Debezium", "CDC из SQL Server")
+    Container(camel_adapter, "Camel Adapter", "Java", "Интеграция с Camel шиной")
+}
+
+' ==== Взаимодействия ====
+
+' Пользователи
+Rel(analyst, portal_ui, "Использует портал", "HTTPS")
+Rel(doctor, patient_service, "Работает с пациентами", "REST/HTTPS")
+Rel(fintech_operator, account_service, "Управляет счетами", "REST/HTTPS")
+Rel(manager, portal_ui, "Просмотр отчетов", "HTTPS")
+
+' Портал с витринами
+Rel(portal_api, clickhouse, "Аналитические запросы", "JDBC")
+Rel(portal_api, druid, "Запросы временных рядов", "REST")
+Rel(query_engine, redis, "Кэширование результатов", "Redis protocol")
+Rel(portal_api, data_catalog, "Поиск метаданных", "REST")
+
+' Доменные события
+Rel(patient_service, event_bus, "Публикует события", "Kafka")
+Rel(account_service, event_bus, "Публикует события", "Kafka")
+Rel(ai_processing, event_bus, "Публикует события", "Kafka")
+
+' Потоковая обработка
+Rel(event_bus, stream_processor, "Чтение событий", "Kafka")
+Rel(stream_processor, clickhouse, "Запись агрегатов", "JDBC")
+
+' Пакетная обработка
+Rel(data_lake, airflow, "Чтение данных", "S3 API")
+Rel(airflow, clickhouse, "Загрузка данных", "JDBC")
+
+' Антикоррупционные адаптеры
+Rel(dwh_adapter, event_bus, "Публикация событий", "Kafka")
+Rel(camel_adapter, event_bus, "Публикация событий", "Kafka")
+
+' Внешние системы
+Rel(regulator, portal_api, "Запрос отчетов", "HTTPS")
+Rel(partner, event_bus, "Обмен данными", "Kafka")
+Rel(payment_system, transaction_service, "Платежи", "REST/HTTPS")
+
+' Внутренние связи
+Rel(portal_ui, portal_api, "API запросы", "HTTPS")
+Rel(portal_api, report_service, "Генерация отчетов", "gRPC")
+Rel(portal_api, query_engine, "Обработка запросов", "gRPC")
+
+' Легаси системы (показаны вне основной архитектуры)
+System_Ext(legacy_dwh, "Legacy DWH", "Microsoft SQL Server 2008")
+System_Ext(legacy_camel, "Legacy Camel", "Apache Camel шина")
+
+Rel(legacy_dwh, dwh_adapter, "CDC репликация", "JDBC")
+Rel(legacy_camel, camel_adapter, "Маршрутизация", "AMQP")
+
+@enduml

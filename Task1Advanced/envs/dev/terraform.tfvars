@@ -1,0 +1,9 @@
+cloud_id  = "your-cloud-id"
+folder_id = "your-folder-id"
+vm_name   = "dev-vm"
+cpu_count = 2
+ram_size  = 4
+disk_size = 20
+subnet_id = "your-subnet-id"
+ssh_key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
+zone      = "ru-central1-a"
