@@ -1,0 +1,9 @@
+cloud_id  = "your-cloud-id"
+folder_id = "your-folder-id"
+vm_name   = "stage-vm"
+cpu_count = 4
+ram_size  = 8
+disk_size = 50
+subnet_id = "your-subnet-id"
+ssh_key   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
+zone      = "ru-central1-b"

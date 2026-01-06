@@ -1,0 +1,161 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Bounded Contexts диаграмма - Компания "Будущее 2.0"
+
+' ==== Основные домены ====
+
+' Домен 1: Медицинский
+Boundary(medical_domain, "Медицинский домен", "Управление медицинскими услугами") {
+    Container(patient_management, "Управление пациентами", "", "Пациенты, записи, расписание")
+    Container(medical_records, "Медицинские записи", "", "Истории болезни, диагнозы")
+    Container(appointment_scheduling, "Расписание", "", "Записи на прием, календарь")
+    Container(inventory_management, "Управление инвентарем", "", "Оборудование, медикаменты")
+}
+
+' Домен 2: Финтех
+Boundary(fintech_domain, "Финтех домен", "Финансовые услуги и банкинг") {
+    Container(account_management, "Управление счетами", "", "Счета, балансы, карты")
+    Container(loan_management, "Кредитование", "", "Кредитные договоры, займы")
+    Container(transaction_processing, "Обработка транзакций", "", "Платежи, переводы")
+    Container(fraud_detection, "Обнаружение мошенничества", "", "Анализ транзакций")
+}
+
+' Домен 3: ИИ-сервисы
+Boundary(ai_domain, "Домен ИИ-сервисов", "Анализ медицинских данных") {
+    Container(medical_image_analysis, "Анализ медицинских изображений", "", "Рентген, МРТ, КТ")
+    Container(predictive_analytics, "Прогностическая аналитика", "", "Прогнозы, рекомендации")
+    Container(nlp_processing, "Обработка медицинских текстов", "", "Выписки, рецепты")
+    Container(model_training, "Обучение моделей", "", "ML pipelines, эксперименты")
+}
+
+' Домен 4: Аналитика и отчетность
+Boundary(analytics_domain, "Аналитический домен", "Отчетность и бизнес-аналитика") {
+    Container(business_intelligence, "Бизнес-аналитика", "", "Дашборды, KPI")
+    Container(financial_reporting, "Финансовая отчетность", "", "Бухгалтерия, налоги")
+    Container(operational_analytics, "Операционная аналитика", "", "Эффективность, метрики")
+    Container(data_warehouse, "Виртуальное хранилище", "", "Витрины, агрегаты")
+}
+
+' Домен 5: Персонал и HR
+Boundary(hr_domain, "Домен персонала", "Управление сотрудниками") {
+    Container(staff_management, "Управление персоналом", "", "Сотрудники, роли, смены")
+    Container(performance_management, "Управление эффективностью", "", "Оценки, KPI")
+    Container(payroll_processing, "Расчет зарплат", "", "Зарплата, премии, налоги")
+    Container(compliance_management, "Управление соответствием", "", "Сертификаты, лицензии")
+}
+
+' ==== Shared Kernel (общие поддомены) ====
+
+Boundary(shared_kernel, "Shared Kernel", "Общие поддомены") {
+    Container(identity_access, "Идентификация и доступ", "", "Пользователи, роли, права")
+    Container(notification_service, "Сервис уведомлений", "", "Email, SMS, push")
+    Container(integration_adapter, "Адаптер интеграций", "", "API Gateway, трансформации")
+    Container(audit_logging, "Аудирование и логирование", "", "Логи действий, аудит-трейлы")
+}
+
+' ==== Контекстные карты и отношения ====
+
+' Медицинский домен отношения
+Rel(medical_domain, shared_kernel, "Использует", "REST/Events")
+Rel(medical_domain, fintech_domain, "Партнерство", "Events (PatientBilling)")
+Rel(medical_domain, ai_domain, "Потребляет", "Events/API")
+
+' Финтех домен отношения
+Rel(fintech_domain, shared_kernel, "Использует", "REST/Events")
+Rel(fintech_domain, analytics_domain, "Поставляет данные", "Events/Streams")
+
+' ИИ домен отношения
+Rel(ai_domain, medical_domain, "Обогащает", "Events/ML Results")
+Rel(ai_domain, analytics_domain, "Поставляет инсайты", "Predictions/Events")
+
+' Аналитический домен отношения
+Rel(analytics_domain, medical_domain, "Анализирует", "Read Models")
+Rel(analytics_domain, fintech_domain, "Анализирует", "Read Models")
+Rel(analytics_domain, hr_domain, "Анализирует", "Read Models")
+
+' HR домен отношения
+Rel(hr_domain, medical_domain, "Обеспечивает персонал", "Staff Events")
+Rel(hr_domain, shared_kernel, "Использует", "REST/Events")
+
+' ==== Антикоррупционные слои ====
+
+Boundary(legacy_integration, "Антикоррупционный слой", "Интеграция с легаси") {
+    Container(dwh_adapter, "DWH адаптер", "", "CDC, трансформация данных")
+    Container(camel_adapter, "Camel адаптер", "", "Маршрутизация, протоколы")
+    Container(schema_mapper, "Маппер схем", "", "Трансформация форматов")
+}
+
+Rel(medical_domain, legacy_integration, "Миграция данных", "Events/CDC")
+Rel(fintech_domain, legacy_integration, "Миграция данных", "Events/CDC")
+Rel(legacy_integration, analytics_domain, "Исторические данные", "Batch/Events")
+
+' ==== Ubiquitous Language связи ====
+
+note top of medical_domain
+  **Ubiquitous Language:**
+  - Пациент (Patient)
+  - Запись (Appointment)
+  - Диагноз (Diagnosis)
+  - Рецепт (Prescription)
+  - Исследование (Examination)
+end note
+
+note top of fintech_domain
+  **Ubiquitous Language:**
+  - Счет (Account)
+  - Транзакция (Transaction)
+  - Кредит (Loan)
+  - Платеж (Payment)
+  - Баланс (Balance)
+end note
+
+note top of ai_domain
+  **Ubiquitous Language:**
+  - Модель (Model)
+  - Прогноз (Prediction)
+  - Анализ (Analysis)
+  - Обучение (Training)
+  - Эксперимент (Experiment)
+end note
+
+' ==== Стратегические паттерны ====
+
+' Partnership (партнерство) - тесная интеграция
+Rel(medical_domain, fintech_domain, "Partnership", "Совместные бизнес-процессы")
+
+' Shared Kernel (общее ядро)
+note on link
+  **Shared Kernel:**
+  Идентификация, уведомления,
+  аудит - общие для всех доменов
+end note
+
+' Customer-Supplier (клиент-поставщик)
+Rel(ai_domain, medical_domain, "Customer-Supplier", "ИИ услуги для медицины")
+
+' Conformist (конформист)
+Rel(legacy_integration, medical_domain, "Conformist", "Адаптация к легаси")
+
+
+' Показываем границы контекстов
+Container_Boundary(core_domains, "Core Domains", "Ключевые домены бизнеса") {
+    Container(medical_core, "Медицина", "", "Core")
+    Container(fintech_core, "Финтех", "", "Core")
+}
+
+Container_Boundary(supporting_domains, "Supporting Domains", "Поддерживающие домены") {
+    Container(ai_support, "ИИ-сервисы", "", "Supporting")
+    Container(analytics_support, "Аналитика", "", "Supporting")
+}
+
+Container_Boundary(generic_domains, "Generic Domains", "Общие домены") {
+    Container(hr_generic, "Персонал", "", "Generic")
+    Container(shared_generic, "Shared Kernel", "", "Generic")
+}
+
+Rel(core_domains, supporting_domains, "Использует", "Events/API")
+Rel(core_domains, generic_domains, "Использует", "Events/API")
+Rel(supporting_domains, generic_domains, "Использует", "Events/API")
+
+@enduml
